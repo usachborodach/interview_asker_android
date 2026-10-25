@@ -1,35 +1,52 @@
-# Gradle files
+# ─── Gradle ───────────────────────────────────────────────────────────────
 .gradle/
 build/
 .kotlin/
+*.probe                 # временные файлы file-watching Gradle
+*.hprof                 # дампы кучи JVM
 
-# Local configuration file (sdk path, etc)
-local.properties
+# ВАЖНО: не игнорируйте *.jar глобально — потеряете gradle-wrapper.jar.
+# Если всё-таки добавите правило *.jar выше, верните wrapper jar явно:
+# !gradle/wrapper/gradle-wrapper.jar
 
-# Log/OS Files
+# ─── Локальная конфигурация ──────────────────────────────────────────────
+local.properties        # sdk.dir и путь к SDK, у каждого свой
+keystore.properties     # путь/пароли к keystore (если заведёте)
+*.jks
+*.keystore
+*.p12
+
+# ─── Секреты ─────────────────────────────────────────────────────────────
+.env
+.env.*
+google-services.json
+
+# ─── Логи и OS-мусор ─────────────────────────────────────────────────────
 *.log
+.DS_Store
+Thumbs.db
 
-# Android Studio generated files and folders
+# ─── Android-артефакты сборки ────────────────────────────────────────────
 captures/
 .externalNativeBuild/
 .cxx/
+.navigation/
 *.aab
 *.apk
 output-metadata.json
 
-# IntelliJ
+# ─── IntelliJ / Android Studio (на случай, если откроете в IDE) ─────────
 *.iml
 .idea/
 misc.xml
 deploymentTargetDropDown.xml
 render.experimental.xml
 
-# Keystore files
-*.jks
-*.keystore
+# ─── VS Code ─────────────────────────────────────────────────────────────
+.vscode/
+.history/               # расширение Local History
 
-# Google Services (e.g. APIs or Firebase)
-google-services.json
-
-# Android Profiling
-*.hprof
+# ─── Merge-конфликты и бэкапы ────────────────────────────────────────────
+*.orig
+*.rej
+*.bak
