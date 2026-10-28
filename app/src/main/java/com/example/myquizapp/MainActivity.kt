@@ -13,11 +13,18 @@ data class QaPair(
 
 class MainActivity : AppCompatActivity() {
 
+    private companion object {
+        const val KEY_QUESTION = "question"
+        const val KEY_ANSWER = "answer"
+        const val KEY_IS_ANSWER_SHOWN = "isAnswerShown"
+    }
+
     private lateinit var qaPairs: List<QaPair>
 
     private lateinit var textView: TextView
     private lateinit var button: Button
 
+    private var currentQuestion: String = ""
     private var currentAnswer: String = ""
     private var isAnswerShown = false
 
@@ -44,7 +51,28 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        showRandomQuestion()
+        if (savedInstanceState != null) {
+            // Activity пересоздана (поворот, разблокировка, возврат из фона).
+            // НЕ выбираем новый вопрос — восстанавливаем прежний.
+            currentQuestion = savedInstanceState.getString(KEY_QUESTION).orEmpty()
+            currentAnswer = savedInstanceState.getString(KEY_ANSWER).orEmpty()
+            isAnswerShown = savedInstanceState.getBoolean(KEY_IS_ANSWER_SHOWN, false)
+
+            textView.text = if (isAnswerShown) currentAnswer else currentQuestion
+            button.setText(
+                if (isAnswerShown) R.string.next_question else R.string.show_answer
+            )
+        } else {
+            // Холодный старт — единственный случай, когда нужен новый вопрос.
+            showRandomQuestion()
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(KEY_QUESTION, currentQuestion)
+        outState.putString(KEY_ANSWER, currentAnswer)
+        outState.putBoolean(KEY_IS_ANSWER_SHOWN, isAnswerShown)
     }
 
     private fun showRandomQuestion() {
@@ -54,8 +82,9 @@ class MainActivity : AppCompatActivity() {
             return
         }
         val pair = qaPairs.random()
-        textView.text = pair.question
+        currentQuestion = pair.question
         currentAnswer = pair.answer
+        textView.text = currentQuestion
         isAnswerShown = false
         button.setText(R.string.show_answer)
     }
