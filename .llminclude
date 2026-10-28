@@ -1,0 +1,11 @@
+# files_included_to_prompt:
+.llminclude
+build.gradle.kts
+app/build.gradle.kts
+settings.gradle.kts
+gradle.properties
+gradle/wrapper/gradle-wrapper.properties
+app/src/main/AndroidManifest.xml
+app/src/main/**/*.kt
+app/src/main/res/**/*.xml
+app/src/main/assets/qanda.json
