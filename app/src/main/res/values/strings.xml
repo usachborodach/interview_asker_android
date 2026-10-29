@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">interview_asker</string>
+    <string name="app_name">Interview Asker</string>
     <string name="show_answer">Показать ответ</string>
     <string name="next_question">Следующий вопрос</string>
 </resources>
