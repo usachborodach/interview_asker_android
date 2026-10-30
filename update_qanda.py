@@ -15,7 +15,7 @@ res = list()
 for item in items:
     splitted_item = item.split('\n', 1)
     res.append({
-        'question': splitted_item[0],
+        'question': splitted_item[0][2:],
         'answer': splitted_item[1]
     })
 
