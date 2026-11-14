@@ -1,5 +1,6 @@
 package com.example.myquizapp
 
+import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
@@ -26,6 +27,11 @@ class MainActivity : AppCompatActivity() {
         const val KEY_ANSWER = "answer"
         const val KEY_IS_ANSWER_SHOWN = "isAnswerShown"
 
+        const val DECK_PREFS = "deck"
+        const val KEY_DECK_ORDER = "deckOrder"
+        const val KEY_DECK_INDEX = "deckIndex"
+        const val KEY_DECK_CURRENT = "deckCurrentQuestion"
+
         const val REMOTE_URL = "https://interviewasker.usachborodach.ru/qanda"
         const val CACHE_FILE = "qanda.json"
         const val CONNECT_TIMEOUT_MS = 5_000
@@ -33,8 +39,15 @@ class MainActivity : AppCompatActivity() {
     }
 
     private lateinit var qaPairs: List<QaPair>
+
+    // «Колода»: перемешанный список вопросов текущего круга.
+    // Проход по кругу гарантирует, что внутри круга вопросов нет.
+    private var deck: List<QaPair> = emptyList()
+    private var deckIndex = 0
+
     private lateinit var textView: TextView
     private lateinit var button: Button
+    private lateinit var buttonBack: Button
     private lateinit var markwon: Markwon
 
     private var currentQuestion: String = ""
@@ -47,20 +60,26 @@ class MainActivity : AppCompatActivity() {
 
         textView = findViewById(R.id.textView)
         button = findViewById(R.id.button)
+        buttonBack = findViewById(R.id.buttonBack)
 
         markwon = buildMarkwon()
 
         // 1. Мгновенно: кеш → assets → пусто
         qaPairs = loadFromCache() ?: loadFromAssets() ?: emptyList()
+        initDeck(qaPairs)
 
         button.setOnClickListener {
             if (isAnswerShown) {
-                showRandomQuestion()
+                showNextQuestion()
             } else {
                 markwon.setMarkdown(textView, currentAnswer)
                 isAnswerShown = true
                 button.setText(R.string.next_question)
             }
+        }
+
+        buttonBack.setOnClickListener {
+            showPreviousQuestion()
         }
 
         if (savedInstanceState != null) {
@@ -69,8 +88,9 @@ class MainActivity : AppCompatActivity() {
             isAnswerShown = savedInstanceState.getBoolean(KEY_IS_ANSWER_SHOWN, false)
 
             if (currentQuestion.isBlank()) {
-                showRandomQuestion()
+                showCurrentQuestion()
             } else {
+                updateBackButton()
                 markwon.setMarkdown(
                     textView,
                     if (isAnswerShown) currentAnswer else currentQuestion
@@ -80,7 +100,7 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         } else {
-            showRandomQuestion()
+            showCurrentQuestion()
         }
 
         // 2. В фоне: обновить кеш с сервера (только на Wi-Fi)
@@ -100,19 +120,108 @@ class MainActivity : AppCompatActivity() {
             .usePlugin(TablePlugin.create(this))
             .build()
 
-    private fun showRandomQuestion() {
-        if (qaPairs.isEmpty()) {
+    // ─── Колода ─────────────────────────────────────────────────────────────
+
+    // Восстанавливаем колоду прошлого запуска (пройденные вопросы остаются
+    // пройденными), если она совместима с текущим списком. Иначе перемешиваем.
+    private fun initDeck(pairs: List<QaPair>) {
+        val prefs = getSharedPreferences(DECK_PREFS, Context.MODE_PRIVATE)
+        val byQuestion = pairs.associateBy { it.question }
+        val savedOrder = prefs.getString(KEY_DECK_ORDER, null)
+
+        if (savedOrder != null) {
+            val questions = try {
+                val arr = JSONArray(savedOrder)
+                (0 until arr.length()).map { arr.getString(it) }
+            } catch (e: Exception) {
+                emptyList()
+            }
+            val restored = questions.mapNotNull { byQuestion[it] }
+            if (restored.isNotEmpty()) {
+                deck = restored
+                val savedCurrent = prefs.getString(KEY_DECK_CURRENT, null)
+                val fromCurrent = savedCurrent
+                    ?.let { q -> restored.indexOfFirst { it.question == q } }
+                    ?.takeIf { it >= 0 }
+                deckIndex = fromCurrent
+                    ?: prefs.getInt(KEY_DECK_INDEX, 0).coerceIn(0, restored.size - 1)
+                return
+            }
+        }
+
+        deck = pairs.shuffled()
+        deckIndex = 0
+        saveDeck()
+    }
+
+    private fun saveDeck() {
+        val order = JSONArray()
+        deck.forEach { order.put(it.question) }
+        getSharedPreferences(DECK_PREFS, Context.MODE_PRIVATE).edit()
+            .putString(KEY_DECK_ORDER, order.toString())
+            .putInt(KEY_DECK_INDEX, deckIndex)
+            .putString(KEY_DECK_CURRENT, deck.getOrNull(deckIndex)?.question.orEmpty())
+            .apply()
+    }
+
+    private fun showCurrentQuestion() {
+        if (deck.isEmpty()) {
             textView.text = "Список вопросов пуст"
             button.isEnabled = false
+            buttonBack.isEnabled = false
             return
         }
-        val pair = qaPairs.random()
+        deckIndex = deckIndex.coerceIn(0, deck.size - 1)
+        val pair = deck[deckIndex]
         currentQuestion = pair.question
         currentAnswer = pair.answer
         markwon.setMarkdown(textView, currentQuestion)
         isAnswerShown = false
         button.isEnabled = true
         button.setText(R.string.show_answer)
+        updateBackButton()
+    }
+
+    private fun showNextQuestion() {
+        if (deck.isEmpty()) return
+        if (deckIndex >= deck.size - 1) {
+            // круг пройден — раздаём новую колоду
+            deck = qaPairs.shuffled()
+            deckIndex = 0
+        } else {
+            deckIndex++
+        }
+        saveDeck()
+        showCurrentQuestion()
+    }
+
+    private fun showPreviousQuestion() {
+        if (deckIndex == 0) return
+        deckIndex--
+        saveDeck()
+        showCurrentQuestion()
+    }
+
+    private fun updateBackButton() {
+        buttonBack.isEnabled = deck.isNotEmpty() && deckIndex > 0
+    }
+
+    // Обновление списка с сервером применяется сразу: пройденная часть
+    // колоды сохраняется, непройденные и новые вопросы перемешиваются
+    // и ставятся после текущей позиции.
+    private fun rebuildDeck(newPairs: List<QaPair>) {
+        if (newPairs.isEmpty()) return
+        val byQuestion = newPairs.associateBy { it.question }
+        val oldQuestions = deck.map { it.question }.toSet()
+
+        val seen = deck.take(deckIndex + 1).filter { it.question in byQuestion }
+        val unseen = deck.drop(deckIndex + 1).filter { it.question in byQuestion }
+        val added = newPairs.filter { it.question !in oldQuestions }
+
+        deck = seen + (unseen + added).shuffled()
+        // Текущий вопрос — последний в пройденной части
+        deckIndex = (seen.size - 1).coerceIn(0, deck.size - 1)
+        saveDeck()
     }
 
     // ─── Загрузка ─────────────────────────────────────────────────────────
@@ -165,9 +274,16 @@ class MainActivity : AppCompatActivity() {
 
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
-                val wasEmpty = qaPairs.isEmpty()
+                val wasEmpty = deck.isEmpty()
                 qaPairs = freshPairs
-                if (wasEmpty) showRandomQuestion()
+                rebuildDeck(freshPairs)
+                // Текущий вопрос на экране не трогаем, кроме случая,
+                // когда до обновления показывали пустоту
+                if (wasEmpty && deck.isNotEmpty()) {
+                    showCurrentQuestion()
+                } else {
+                    updateBackButton()
+                }
             }
         }.start()
     }

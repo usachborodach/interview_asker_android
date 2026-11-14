@@ -3,4 +3,5 @@
     <string name="app_name">Interview Asker</string>
     <string name="show_answer">Показать ответ</string>
     <string name="next_question">Следующий вопрос</string>
+    <string name="back">← Назад</string>
 </resources>
