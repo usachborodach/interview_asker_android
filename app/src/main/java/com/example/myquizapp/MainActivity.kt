@@ -6,6 +6,9 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import io.noties.markwon.Markwon
+import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
+import io.noties.markwon.ext.tables.TablePlugin
 import org.json.JSONArray
 import java.io.File
 import java.net.HttpURLConnection
@@ -32,6 +35,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var qaPairs: List<QaPair>
     private lateinit var textView: TextView
     private lateinit var button: Button
+    private lateinit var markwon: Markwon
 
     private var currentQuestion: String = ""
     private var currentAnswer: String = ""
@@ -44,6 +48,8 @@ class MainActivity : AppCompatActivity() {
         textView = findViewById(R.id.textView)
         button = findViewById(R.id.button)
 
+        markwon = buildMarkwon()
+
         // 1. Мгновенно: кеш → assets → пусто
         qaPairs = loadFromCache() ?: loadFromAssets() ?: emptyList()
 
@@ -51,7 +57,7 @@ class MainActivity : AppCompatActivity() {
             if (isAnswerShown) {
                 showRandomQuestion()
             } else {
-                textView.text = currentAnswer
+                markwon.setMarkdown(textView, currentAnswer)
                 isAnswerShown = true
                 button.setText(R.string.next_question)
             }
@@ -65,7 +71,10 @@ class MainActivity : AppCompatActivity() {
             if (currentQuestion.isBlank()) {
                 showRandomQuestion()
             } else {
-                textView.text = if (isAnswerShown) currentAnswer else currentQuestion
+                markwon.setMarkdown(
+                    textView,
+                    if (isAnswerShown) currentAnswer else currentQuestion
+                )
                 button.setText(
                     if (isAnswerShown) R.string.next_question else R.string.show_answer
                 )
@@ -85,6 +94,12 @@ class MainActivity : AppCompatActivity() {
         outState.putBoolean(KEY_IS_ANSWER_SHOWN, isAnswerShown)
     }
 
+    private fun buildMarkwon(): Markwon =
+        Markwon.builder(this)
+            .usePlugin(StrikethroughPlugin.create())
+            .usePlugin(TablePlugin.create(this))
+            .build()
+
     private fun showRandomQuestion() {
         if (qaPairs.isEmpty()) {
             textView.text = "Список вопросов пуст"
@@ -94,7 +109,7 @@ class MainActivity : AppCompatActivity() {
         val pair = qaPairs.random()
         currentQuestion = pair.question
         currentAnswer = pair.answer
-        textView.text = currentQuestion
+        markwon.setMarkdown(textView, currentQuestion)
         isAnswerShown = false
         button.isEnabled = true
         button.setText(R.string.show_answer)
@@ -137,13 +152,13 @@ class MainActivity : AppCompatActivity() {
         Thread {
             val freshPairs = try {
                 val json = httpGet(REMOTE_URL)
-                val pairs = parseQaJson(json)          // сначала валидируем
+                val pairs = parseQaJson(json)
                 if (pairs.isNotEmpty()) {
                     writeCache(json)
                 }
                 pairs
             } catch (e: Exception) {
-                null                                  // таймаут/нет сети/битый JSON
+                null
             } ?: return@Thread
 
             if (freshPairs.isEmpty()) return@Thread
@@ -152,21 +167,16 @@ class MainActivity : AppCompatActivity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 val wasEmpty = qaPairs.isEmpty()
                 qaPairs = freshPairs
-                // если до этого данных вообще не было — показываем сразу;
-                // иначе текущий вопрос не трогаем, новый набор
-                // подхватится при следующем «Следующий вопрос»
                 if (wasEmpty) showRandomQuestion()
             }
         }.start()
     }
 
     private fun writeCache(json: String) {
-        // атомарно: пишем в .tmp, потом переименовываем
         val dst = File(filesDir, CACHE_FILE)
         val tmp = File(filesDir, "$CACHE_FILE.tmp")
         tmp.writeText(json, Charsets.UTF_8)
         if (!tmp.renameTo(dst)) {
-            // если rename не сработал (бывает на некоторых ФС) — пишем напрямую
             dst.writeText(json, Charsets.UTF_8)
             tmp.delete()
         }
