@@ -4,8 +4,10 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Bundle
+import android.view.LayoutInflater
 import android.widget.Button
 import android.widget.TextView
+import androidx.appcompat.app.ActionBar
 import androidx.appcompat.app.AppCompatActivity
 import io.noties.markwon.Markwon
 import io.noties.markwon.ext.strikethrough.StrikethroughPlugin
@@ -14,6 +16,9 @@ import org.json.JSONArray
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 data class QaPair(
     val question: String,
@@ -31,6 +36,7 @@ class MainActivity : AppCompatActivity() {
         const val KEY_DECK_ORDER = "deckOrder"
         const val KEY_DECK_INDEX = "deckIndex"
         const val KEY_DECK_CURRENT = "deckCurrentQuestion"
+        const val KEY_LAST_UPDATED = "lastUpdatedMillis"
 
         const val REMOTE_URL = "https://interviewasker.usachborodach.ru/qanda"
         const val CACHE_FILE = "qanda.json"
@@ -48,6 +54,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var textView: TextView
     private lateinit var button: Button
     private lateinit var buttonBack: Button
+    private lateinit var updatedLabel: TextView
     private lateinit var markwon: Markwon
 
     private var currentQuestion: String = ""
@@ -62,7 +69,10 @@ class MainActivity : AppCompatActivity() {
         button = findViewById(R.id.button)
         buttonBack = findViewById(R.id.buttonBack)
 
+        setupActionBar()
+
         markwon = buildMarkwon()
+        updateUpdatedLabel()
 
         // 1. Мгновенно: кеш → assets → пусто
         qaPairs = loadFromCache() ?: loadFromAssets() ?: emptyList()
@@ -119,6 +129,37 @@ class MainActivity : AppCompatActivity() {
             .usePlugin(StrikethroughPlugin.create())
             .usePlugin(TablePlugin.create(this))
             .build()
+
+    private fun setupActionBar() {
+        val themedContext = supportActionBar?.themedContext ?: this
+        val custom = LayoutInflater.from(themedContext)
+            .inflate(R.layout.actionbar_title, null)
+        updatedLabel = custom.findViewById(R.id.actionbarUpdated)
+        supportActionBar?.apply {
+            setDisplayShowTitleEnabled(false)
+            setDisplayShowCustomEnabled(true)
+            setCustomView(
+                custom,
+                ActionBar.LayoutParams(
+                    ActionBar.LayoutParams.MATCH_PARENT,
+                    ActionBar.LayoutParams.MATCH_PARENT
+                )
+            )
+        }
+    }
+
+    private fun updateUpdatedLabel() {
+        val updated = getSharedPreferences(DECK_PREFS, Context.MODE_PRIVATE)
+            .getLong(KEY_LAST_UPDATED, 0L)
+        val text = if (updated > 0L) {
+            val formatted = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
+                .format(Date(updated))
+            getString(R.string.updated_at, formatted)
+        } else {
+            getString(R.string.updated_at, "—")
+        }
+        updatedLabel.text = text
+    }
 
     // ─── Колода ─────────────────────────────────────────────────────────────
 
@@ -264,6 +305,7 @@ class MainActivity : AppCompatActivity() {
                 val pairs = parseQaJson(json)
                 if (pairs.isNotEmpty()) {
                     writeCache(json)
+                    markUpdated()
                 }
                 pairs
             } catch (e: Exception) {
@@ -284,8 +326,15 @@ class MainActivity : AppCompatActivity() {
                 } else {
                     updateBackButton()
                 }
+                updateUpdatedLabel()
             }
         }.start()
+    }
+
+    private fun markUpdated() {
+        getSharedPreferences(DECK_PREFS, Context.MODE_PRIVATE).edit()
+            .putLong(KEY_LAST_UPDATED, System.currentTimeMillis())
+            .apply()
     }
 
     private fun writeCache(json: String) {
